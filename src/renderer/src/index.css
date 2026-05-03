@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+/* 캐릭터 본체 = 드래그 핸들. 인터랙션 요소(말풍선 등)는 -webkit-app-region: no-drag */
+.character-drag {
+  -webkit-app-region: drag;
+  cursor: grab;
+}
+
+/* 둥둥 (working 상태에서만 적용) */
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+.character-float {
+  animation: float 1.6s ease-in-out infinite;
+}
+
+/* 상태 아이콘 진입 효과 (0~2초 깜빡임) */
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.icon-blink {
+  animation: blink 0.8s ease-in-out infinite;
+}
+
+/* 진입 효과 종료 직후 fade-out */
+@keyframes iconFade {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+.icon-fade-after-entry {
+  animation: iconFade 0.4s ease-out forwards;
+}
