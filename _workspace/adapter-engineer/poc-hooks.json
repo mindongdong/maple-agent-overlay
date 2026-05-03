@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      { "hooks": [{ "type": "http", "url": "http://127.0.0.1:40429/event" }] }
+    ],
+    "PostToolUse": [
+      { "hooks": [{ "type": "http", "url": "http://127.0.0.1:40429/event" }] }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [{ "type": "http", "url": "http://127.0.0.1:40429/event" }]
+      }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "http", "url": "http://127.0.0.1:40429/event" }] }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "http", "url": "http://127.0.0.1:40429/event" }] }
+    ],
+    "SessionStart": [
+      { "hooks": [{ "type": "http", "url": "http://127.0.0.1:40429/event" }] }
+    ]
+  }
+}

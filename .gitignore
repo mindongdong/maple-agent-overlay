@@ -8,3 +8,4 @@ dist/
 .env.local
 .vscode/settings.json
 _workspace/captures/
+_workspace/adapter-engineer/payload-samples.jsonl
