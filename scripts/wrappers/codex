@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Maple Overlay — Codex CLI wrapper.
+#
+# 실제 codex 호출을 가로채 stdout/stderr 를 휴리스틱 파싱하고,
+# 통일 페이로드를 webhook 으로 발사한다. 원본 출력은 그대로 흘려준다.
+#
+# 설치:
+#   1) 본 파일을 PATH 우선 디렉토리에 복사 (예: ~/.maple-overlay/bin/codex)
+#   2) 실행 권한: chmod +x ~/.maple-overlay/bin/codex
+#   3) shell rc 에: export PATH="$HOME/.maple-overlay/bin:$PATH"
+#   4) 실제 codex 의 절대 경로를 REAL_CODEX 에 (자동 감지 실패 시)
+#   5) MAPLE_OVERLAY_PORT 가 기본 40429 가 아니면 환경변수로 지정
+
+set -u
+
+# 자동 감지: PATH 에서 다음 codex (자기 자신 제외)
+REAL_CODEX="${MAPLE_REAL_CODEX:-}"
+if [ -z "$REAL_CODEX" ]; then
+  while IFS= read -r line; do
+    if [ "$line" != "$0" ] && [ -x "$line" ]; then
+      REAL_CODEX="$line"
+      break
+    fi
+  done < <(which -a codex 2>/dev/null)
+fi
+if [ -z "${REAL_CODEX:-}" ] || [ ! -x "$REAL_CODEX" ]; then
+  echo "[maple-overlay] error: real codex not found. Set MAPLE_REAL_CODEX=/path/to/codex." >&2
+  exit 127
+fi
+
+PORT="${MAPLE_OVERLAY_PORT:-40429}"
+WEBHOOK_URL="http://127.0.0.1:${PORT}/event"
+AGENT="codex${MAPLE_AGENT_INSTANCE:+-${MAPLE_AGENT_INSTANCE}}"
+
+post() {
+  # silent fail — 원본 명령어 동작 절대 방해 X
+  local state="$1" msg="$2"
+  # JSON 안전 escape: 따옴표/백슬래시/제어문자 처리 (간단 버전)
+  msg="${msg//\\/\\\\}"
+  msg="${msg//\"/\\\"}"
+  msg="${msg//$'\n'/ }"
+  msg="${msg:0:300}"
+  curl -s --max-time 1 -X POST "$WEBHOOK_URL" \
+    -H "Content-Type: application/json" \
+    -d "{\"agent_name\":\"$AGENT\",\"state\":\"$state\",\"message\":\"$msg\"}" \
+    >/dev/null 2>&1 || true
+}
+
+post "working" "codex started"
+
+LAST_LINE=""
+LOGFILE="$(mktemp -t maple-codex.XXXXXX)"
+
+# stderr 도 파싱하면서 원본 통과시키기
+# stdout 은 line-by-line 휴리스틱
+{
+  "$REAL_CODEX" "$@" 2> >(tee >(while IFS= read -r line; do
+    case "$line" in
+      *"Approval required"*|*"(y/n)"*|*"Approve"*) post "pending_approval" "$line" ;;
+      *"Error"*|*"failed"*|*"Failed"*|*"FATAL"*) post "error" "$line" ;;
+    esac
+  done >&2))
+} | while IFS= read -r line; do
+  printf '%s\n' "$line"
+  LAST_LINE="$line"
+  case "$line" in
+    *"Running"*|*"Executing"*|*"Calling tool"*) post "working" "$line" ;;
+  esac
+done
+
+EXIT=${PIPESTATUS[0]}
+if [ "$EXIT" -eq 0 ]; then
+  post "done" "codex completed${LAST_LINE:+: $LAST_LINE}"
+else
+  post "error" "codex exited with code $EXIT"
+fi
+
+rm -f "$LOGFILE"
+exit "$EXIT"

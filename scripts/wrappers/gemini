@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Maple Overlay — Gemini CLI wrapper. Codex wrapper 와 동일 패턴, 휴리스틱 키워드만 다름.
+
+set -u
+
+REAL_GEMINI="${MAPLE_REAL_GEMINI:-}"
+if [ -z "$REAL_GEMINI" ]; then
+  while IFS= read -r line; do
+    if [ "$line" != "$0" ] && [ -x "$line" ]; then
+      REAL_GEMINI="$line"
+      break
+    fi
+  done < <(which -a gemini 2>/dev/null)
+fi
+if [ -z "${REAL_GEMINI:-}" ] || [ ! -x "$REAL_GEMINI" ]; then
+  echo "[maple-overlay] error: real gemini not found. Set MAPLE_REAL_GEMINI=/path/to/gemini." >&2
+  exit 127
+fi
+
+PORT="${MAPLE_OVERLAY_PORT:-40429}"
+WEBHOOK_URL="http://127.0.0.1:${PORT}/event"
+AGENT="gemini${MAPLE_AGENT_INSTANCE:+-${MAPLE_AGENT_INSTANCE}}"
+
+post() {
+  local state="$1" msg="$2"
+  msg="${msg//\\/\\\\}"
+  msg="${msg//\"/\\\"}"
+  msg="${msg//$'\n'/ }"
+  msg="${msg:0:300}"
+  curl -s --max-time 1 -X POST "$WEBHOOK_URL" \
+    -H "Content-Type: application/json" \
+    -d "{\"agent_name\":\"$AGENT\",\"state\":\"$state\",\"message\":\"$msg\"}" \
+    >/dev/null 2>&1 || true
+}
+
+post "working" "gemini started"
+
+LAST_LINE=""
+
+{
+  "$REAL_GEMINI" "$@" 2> >(tee >(while IFS= read -r line; do
+    case "$line" in
+      *"Confirm"*|*"Allow"*|*"(y/n)"*) post "pending_approval" "$line" ;;
+      *"Error"*|*"failed"*|*"Failed"*) post "error" "$line" ;;
+    esac
+  done >&2))
+} | while IFS= read -r line; do
+  printf '%s\n' "$line"
+  LAST_LINE="$line"
+  case "$line" in
+    *"Running"*|*"Tool:"*|*"Generating"*) post "working" "$line" ;;
+  esac
+done
+
+EXIT=${PIPESTATUS[0]}
+if [ "$EXIT" -eq 0 ]; then
+  post "done" "gemini completed${LAST_LINE:+: $LAST_LINE}"
+else
+  post "error" "gemini exited with code $EXIT"
+fi
+
+exit "$EXIT"
